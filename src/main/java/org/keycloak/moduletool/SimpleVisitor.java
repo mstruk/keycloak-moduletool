@@ -25,16 +25,25 @@ class SimpleVisitor implements ModuleVisitor {
 
     HashSet<Module> optional = new HashSet<>();
     HashSet<Module> hard = new HashSet<>();
+    boolean verbose = false;
+
+    SimpleVisitor(boolean verbose) {
+        this.verbose = verbose;
+    }
 
     @Override
     public void accept(Module module, VisitorContext ctx) {
-        System.out.println(ctx.tab() + module.getId());
+        if (verbose) {
+            System.out.println(ctx.tab() + module.getId());
+        }
         hard.add(module);
     }
 
     @Override
     public void acceptOptional(Module module, VisitorContext ctx) {
-        System.out.println(ctx.tab() + module.getId() + " (optional)");
+        if (verbose) {
+            System.out.println(ctx.tab() + module.getId() + " (optional)");
+        }
         optional.add(module);
     }
 }

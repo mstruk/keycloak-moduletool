@@ -91,9 +91,9 @@ public class Module {
         for (Module m : optionalDependencies) {
             visitor.acceptOptional(m, ctx);
             if (!ctx.visited(m)) {
-                ctx.setOptional(true);
+                ctx.incrOptional();
                 m.visitDependent(visitor, ctx);
-                ctx.setOptional(false);
+                ctx.decrOptional();
             }
         }
         ctx.exit();

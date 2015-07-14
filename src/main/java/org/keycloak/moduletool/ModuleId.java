@@ -24,7 +24,11 @@ public class ModuleId {
     private String slot = "main";
 
     public ModuleId(String name) {
-        this.id = name;
+        String [] idSlot = name.split(":");
+        this.id = idSlot[0];
+        if (idSlot.length > 1) {
+            this.slot = idSlot[1];
+        }
     }
 
     public ModuleId(String name, String slot) {

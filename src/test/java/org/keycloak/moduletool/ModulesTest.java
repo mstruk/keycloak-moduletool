@@ -51,15 +51,17 @@ public class ModulesTest {
             "test.module2:v2",
             "test.module3",
             "test.tools.module4",
-            "test.tools.module4:v2"
+            "test.tools.module4:v2",
+            "test.tools.module6"
         };
 
         String [][] deps = {
             {"test.module2:v2", "test.module3:main"},
             {"test.module1:main", "test.tools.module4:main"},
-            {"test.tools.module4:v2", "test.tools.module5:main"},
+            {"test.tools.module4:v2", "test.tools.module5:main", "test.tools.module6:main"},
             {},
-            {}
+            {},
+            {"test.tools.module4:v2"}
         };
 
 

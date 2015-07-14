@@ -22,11 +22,11 @@ import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 
@@ -37,6 +37,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -44,31 +46,37 @@ import java.util.stream.Stream;
  */
 public class Repository {
 
-    private File repoRoot;
+    private Path repoRoot;
     private LinkedHashMap<ModuleId, Module> allModules = new LinkedHashMap<>();
     private long totalSize;
+    private boolean verbose = false;
 
-    public Repository(String modulesRoot) throws IOException, IllegalFormatCodePointException {
-        repoRoot = new File(modulesRoot);
-        if (!repoRoot.isDirectory()) {
-            throw new IllegalArgumentException("Specified modulesRoot directory does not exist: " + repoRoot.getAbsoluteFile());
+    public Repository(String modulesRoot) throws IOException {
+        this(modulesRoot, false);
+    }
+
+    public Repository(String modulesRoot, boolean verbose) throws IOException, IllegalFormatCodePointException {
+        this.verbose = verbose;
+        repoRoot = Paths.get(modulesRoot);
+        if (!Files.isDirectory(repoRoot)) {
+            throw new IllegalArgumentException("Specified modulesRoot directory does not exist: " + repoRoot.toAbsolutePath());
         }
 
-        Stream<Path> pathStream = Files.find(repoRoot.toPath(), Integer.MAX_VALUE, (path, attrs) -> {
-            return path.toFile().getName().equals("module.xml");
+        Stream<Path> pathStream = Files.find(repoRoot, Integer.MAX_VALUE, (path, attrs) -> {
+            return path.getFileName().toString().equals("module.xml");
         });
 
         DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
         dbf.setValidating(false);
         dbf.setNamespaceAware(true);
 
-        long [] total = new long[1];
+        LongAdder total = new LongAdder();
 
         pathStream.forEach((path) -> {
             // translate their locations to module identifiers
             Path slot = path.getParent();
             StringBuilder sb = new StringBuilder();
-            Path modulepath = repoRoot.toPath().relativize(slot.getParent());
+            Path modulepath = repoRoot.relativize(slot.getParent());
 
             int count = modulepath.getNameCount();
             for (int i = 0; i < count; i++) {
@@ -131,18 +139,17 @@ public class Repository {
                     for (int i = 0; i < elements.getLength(); i++) {
                         String resname = ((Element) elements.item(i)).getAttribute("path");
                         m.addResourceRoot(resname);
-                        File resFile = new File(path.getParent().toFile(), resname);
-
+                        Path resFile = path.getParent().resolve(resname);
                         long size = 0;
-                        if (resFile.isFile()) {
-                            size = resFile.length();
-                        } else if (resFile.isDirectory()) {
+                        if (Files.isRegularFile(resFile)) {
+                            size = Files.size(resFile);
+                        } else if (Files.isDirectory(resFile)) {
                             size = getDirSize(resFile);
                         } else {
                             throw new RuntimeException("Resource does not exist: " + resname + " in module " + m.getId());
                         }
 
-                        total[0] += size;
+                        total.add(size);
                         rootsSize += size;
                     }
 
@@ -155,7 +162,7 @@ public class Repository {
             m.init();
         });
 
-        this.totalSize = total[0];
+        this.totalSize = total.longValue();
 
         LinkedList<Module> failed = new LinkedList<>();
 
@@ -169,7 +176,8 @@ public class Repository {
         if (failed.size() > 0) {
             StringBuilder sb = new StringBuilder("There are missing modules: \n");
             for (Module m: failed) {
-                sb.append(m.getId() + " ("
+                allModules.remove(m.getId());
+                sb.append("- " + m.getId() + " ("
                     + (m.getDependent().size() > 0 ? "referred to by " + toModuleIds(m.getDependent()) + " as required ... " : "")
                     + (m.getOptionallyDependent().size() > 0 ? "referred to by " + toModuleIds(m.getOptionallyDependent()) + " as optional" : "")
                     + ")\n");
@@ -195,26 +203,24 @@ public class Repository {
         return allModules.size();
     }
 
-    private static long getDirSize(File resFile) throws IOException {
-        long [] total = new long[1];
-        Files.walkFileTree(resFile.toPath(), new SimpleFileVisitor<Path>() {
+    private static long getDirSize(Path resFile) throws IOException {
+        LongAdder total = new LongAdder();
+        Files.walkFileTree(resFile, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                total[0] += file.toFile().length();
+                total.add(attrs.size());
                 return FileVisitResult.CONTINUE;
             }
         });
-        return total[0];
+        return total.longValue();
     }
 
 
-    public DeepSizeResult getDeepSize(String moduleNames, boolean skipOptional) {
+    public DeepSizeResult getDeepSize(List<ModuleId> moduleIds, boolean skipOptional) {
         LinkedList<Module> modules = new LinkedList<>();
 
-        String [] names = moduleNames.split(",");
-        for (String name: names) {
-            String [] nameseg = name.split(":");
-            ModuleId id = nameseg.length == 1 ? new ModuleId(nameseg[0]) : new ModuleId(nameseg[0], nameseg[1]);
+
+        for (ModuleId id: moduleIds) {
             Module module = allModules.get(id);
 
             if (module == null) {
@@ -223,7 +229,7 @@ public class Repository {
             modules.add(module);
         }
 
-        SimpleVisitor visitor = new SimpleVisitor();
+        SimpleVisitor visitor = new SimpleVisitor(verbose);
 
         VisitorContext ctx = new VisitorContext();
         for (Module module: modules) {
@@ -260,6 +266,17 @@ public class Repository {
                 print("    - " + dep.getId() + " (optional)");
             }
         }
+    }
+
+    public Set<Module> find(String regex) {
+        Pattern p = Pattern.compile(regex);
+        Set<Module> res = new HashSet<>();
+        for (ModuleId id: allModules.keySet()) {
+            if (p.matcher(id.toString()).matches()) {
+                res.add(allModules.get(id));
+            }
+        }
+        return res;
     }
 
     private static void print(String line) {

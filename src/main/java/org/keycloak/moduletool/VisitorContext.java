@@ -27,15 +27,19 @@ class VisitorContext {
     final static String SPACES = "                                                                                     ";
 
     private HashSet<Module> moduleSet = new HashSet<>();
-    private boolean optional;
+    private int optional;
     private int depth = 0;
 
-    void setOptional(boolean optional) {
-        this.optional = optional;
+    void incrOptional() {
+        optional++;
+    }
+
+    void decrOptional() {
+        optional--;
     }
 
     boolean isOptional() {
-        return this.optional;
+        return this.optional > 0;
     }
 
     boolean visited(Module module) {

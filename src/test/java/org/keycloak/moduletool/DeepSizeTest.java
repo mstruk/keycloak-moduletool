@@ -19,10 +19,12 @@ package org.keycloak.moduletool;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 
 /**
  * @author <a href="mailto:marko.strukelj@gmail.com">Marko Strukelj</a>
@@ -37,7 +39,8 @@ public class DeepSizeTest {
         "test/module3/main/root.war/WEB-INF/web.xml",
         "test/module3/main/module.xml",
         "test/tools/module4/main/module4m.jar",
-        "test/tools/module4/v2/module4v2.jar"
+        "test/tools/module4/v2/module4v2.jar",
+        "test/tools/module6/main/module6.jar"
     };
 
     private static final String [] allModules = {
@@ -46,14 +49,15 @@ public class DeepSizeTest {
         "test.module3",
         "test.tools.module4",
         "test.tools.module4:v2",
-        "test.tools.module5"
+        "test.tools.module5",
+        "test.tools.module6"
     };
 
     @Test
     public void testTotalSize() throws IOException {
         long total = 0;
         for (String res: resources) {
-            total += new File(modulesRoot, res).length();
+            total += Files.size(Paths.get(modulesRoot, res));
         }
 
         Repository repo = new Repository(modulesRoot);
@@ -64,7 +68,7 @@ public class DeepSizeTest {
     public void testDeepSize() throws IOException {
         Repository repo = new Repository(modulesRoot);
 
-        DeepSizeResult result = repo.getDeepSize("test.module1", false);
+        DeepSizeResult result = repo.getDeepSize(Arrays.asList(new ModuleId("test.module1")), false);
         Assert.assertEquals(repo.getTotalSize(), result.getTotalBytes());
 
         HashSet<String> moduleIds = new HashSet<>();
@@ -78,7 +82,7 @@ public class DeepSizeTest {
     @Test
     public void testDeepSizeSkipOptional() throws IOException {
         Repository repo = new Repository(modulesRoot);
-        DeepSizeResult result = repo.getDeepSize("test.module1", true);
+        DeepSizeResult result = repo.getDeepSize(Arrays.asList(new ModuleId("test.module1")), true);
 
         String [] ress = {
             "test/module1/main/module1.jar",
@@ -87,7 +91,7 @@ public class DeepSizeTest {
         };
         long size = 0;
         for (String res: ress) {
-            size += new File(modulesRoot, res).length();
+            size += Files.size(Paths.get(modulesRoot, res));
         }
         Assert.assertEquals(size, result.getTotalBytes());
 
@@ -102,5 +106,19 @@ public class DeepSizeTest {
             "test.tools.module4"
         }));
         Assert.assertEquals(expectedModuleIds, moduleIds);
+    }
+
+    @Test
+    public void testExpandModulesList() throws IOException {
+        String moduleList = "test.tools.*";
+
+        Repository repo = new Repository(modulesRoot);
+        List<ModuleId> moduleIds = Main.resolveModuleList(Arrays.asList(moduleList), repo);
+
+        Assert.assertEquals(new HashSet(Arrays.asList(
+            new ModuleId("test.tools.module4"),
+            new ModuleId("test.tools.module4:v2"),
+            new ModuleId("test.tools.module6")
+        )), new HashSet(moduleIds));
     }
 }
